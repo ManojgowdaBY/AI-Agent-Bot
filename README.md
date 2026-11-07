@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Project Name
 
 ## Overview
@@ -57,3 +58,7 @@ Python 3.11
 
 ## Author
 Manoj Gowda B Y
+=======
+# AI-Agent-Bot
+A Python-based project developed using Streamlit, featuring an interactive web application with AI/ML capabilities. Built with a supporting libraries to deliver an efficient and user-friendly experience.  Topics: Python Streamlit AI Machine Learning
+>>>>>>> 1b1993260cd3dd26e0cb8d027bee03c1b44c496a
