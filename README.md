@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Project Name
 
 ## Overview
