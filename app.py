@@ -1,476 +1,629 @@
-import html
-from datetime import datetime
 
 import streamlit as st
+from graph import app as workflow_app
+from nodes import generate_interview_question
 
-from generator import generate_interview
 
-
-# --------------------------------------------------
-# PAGE CONFIG
-# --------------------------------------------------
+# ============================================================
+# PAGE CONFIGURATION
+# ============================================================
 
 st.set_page_config(
-    page_title="Placement Prep Coach",
+    page_title="PlacementAI | Interview Coach",
     page_icon="🎯",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
 
-# --------------------------------------------------
-# DESIGN SYSTEM
-# Ink #16213E | Teal #0E8388 | Mist #F3F6FA | Amber #F4A93B | White
-# Fonts: Sora (headings) + Inter (body)
-# --------------------------------------------------
+# ============================================================
+# SESSION STATE
+# ============================================================
 
-CSS = """
+defaults = {
+    "generated_question_input": "",
+    "generated_for_role": "",
+    "custom_question": "",
+    "result": None,
+    "total_attempts": 0
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# ============================================================
+# CUSTOM CSS
+# ============================================================
+
+st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@500;600;700&display=swap');
 
-:root {
-    --ink: #16213E;
-    --ink-soft: #4A5578;
-    --teal: #0E8388;
-    --teal-light: #E3F4F4;
-    --mist: #F3F6FA;
-    --amber: #F4A93B;
-    --amber-light: #FFF6E5;
-    --line: #E2E8F0;
-    --white: #FFFFFF;
+/* Main application */
+.stApp {
+    background-color: #F5F7FB;
 }
 
-html, body, [class*="css"], .stMarkdown, p, li, label {
-    font-family: 'Inter', sans-serif;
-    color: var(--ink);
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+    max-width: 1450px;
 }
 
-h1, h2, h3, h4 {
-    font-family: 'Sora', sans-serif !important;
-    color: var(--ink) !important;
-    letter-spacing: -0.01em;
-}
-
-.stApp { background: var(--mist); }
-
-/* Hide default Streamlit chrome */
-#MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
-.block-container { padding-top: 2rem; padding-bottom: 4rem; max-width: 1100px; }
-
-/* ---------- Sidebar ---------- */
-section[data-testid="stSidebar"] {
-    background: var(--white);
-    border-right: 1px solid var(--line);
-}
-section[data-testid="stSidebar"] .block-container { padding-top: 2rem; }
-
-.side-brand {
-    display: flex; align-items: center; gap: 12px; margin-bottom: 6px;
-}
-.side-logo {
-    width: 42px; height: 42px; border-radius: 12px;
-    background: linear-gradient(135deg, var(--teal), var(--ink));
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px;
-}
-.side-title { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 1.05rem; color: var(--ink); line-height: 1.2; }
-.side-sub { color: var(--ink-soft); font-size: 0.85rem; margin: 0 0 1.2rem 0; }
-
-div[data-baseweb="select"] > div {
-    border-radius: 10px; border-color: var(--line); background: var(--white);
-}
-
-/* Primary button */
-.stButton > button[kind="primary"], .stDownloadButton > button {
-    background: linear-gradient(135deg, var(--teal), #0B6B70);
-    color: #fff; border: none; border-radius: 12px;
-    font-family: 'Sora', sans-serif; font-weight: 600;
-    padding: 0.75rem 1rem;
-    box-shadow: 0 6px 16px rgba(14, 131, 136, 0.28);
-    transition: transform .15s ease, box-shadow .15s ease;
-}
-.stButton > button[kind="primary"]:hover, .stDownloadButton > button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(14, 131, 136, 0.35);
-    color: #fff; border: none;
-}
-
-/* ---------- Hero ---------- */
+/* Header */
 .hero {
-    background: linear-gradient(120deg, var(--ink) 0%, #243B6B 60%, #0E8388 130%);
-    border-radius: 24px;
-    padding: 44px 48px;
-    margin-bottom: 28px;
-    position: relative;
-    overflow: hidden;
+    background: linear-gradient(120deg, #172554, #1D4ED8);
+    padding: 30px;
+    border-radius: 18px;
+    color: white;
+    margin-bottom: 25px;
 }
-.hero::after {
-    content: ""; position: absolute; right: -60px; top: -60px;
-    width: 260px; height: 260px; border-radius: 50%;
-    background: rgba(255,255,255,0.06);
-}
-.hero-greeting { color: #BFE9EA; font-size: 1rem; margin: 0 0 10px 0; }
+
 .hero h1 {
-    color: #fff !important; font-size: 2.4rem; line-height: 1.2;
-    margin: 0 0 14px 0; max-width: 640px;
-}
-.hero p { color: #D5DCF0; font-size: 1.05rem; line-height: 1.6; max-width: 600px; margin: 0; }
-
-/* ---------- Feature tiles (welcome) ---------- */
-.tile {
-    background: var(--white); border: 1px solid var(--line);
-    border-radius: 16px; padding: 22px; height: 100%;
-}
-.tile .ico { font-size: 1.6rem; margin-bottom: 8px; }
-.tile h4 { margin: 0 0 6px 0; font-size: 1rem; }
-.tile p { margin: 0; color: var(--ink-soft); font-size: 0.92rem; line-height: 1.55; }
-
-/* ---------- Result header ---------- */
-.result-head {
-    background: var(--white); border: 1px solid var(--line);
-    border-radius: 18px; padding: 22px 26px; margin-bottom: 18px;
-}
-.result-head h2 { margin: 0 0 4px 0; font-size: 1.4rem; }
-.result-head .meta { color: var(--ink-soft); font-size: 0.95rem; }
-
-/* ---------- Badges ---------- */
-.badge {
-    display: inline-block; padding: 4px 12px; border-radius: 999px;
-    font-size: 0.8rem; font-weight: 500; margin-right: 8px;
-}
-.badge-type { background: var(--teal-light); color: #0A5F63; }
-.badge-easy { background: #E6F6EC; color: #1C7A3F; }
-.badge-medium { background: var(--amber-light); color: #9A6410; }
-.badge-hard { background: #FDEAEA; color: #A32D2D; }
-
-/* ---------- Expanders (question cards) ---------- */
-div[data-testid="stExpander"] {
-    background: var(--white);
-    border: 1px solid var(--line) !important;
-    border-radius: 16px !important;
-    margin-bottom: 14px;
-    box-shadow: 0 2px 8px rgba(22, 33, 62, 0.04);
-}
-div[data-testid="stExpander"] summary { padding: 14px 18px; }
-div[data-testid="stExpander"] summary p {
-    font-family: 'Sora', sans-serif; font-weight: 600; font-size: 1.02rem;
+    color: white;
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
 }
 
-/* ---------- Tabs ---------- */
-button[data-baseweb="tab"] { font-family: 'Inter', sans-serif; font-weight: 500; }
-button[data-baseweb="tab"][aria-selected="true"] { color: var(--teal); }
-div[data-baseweb="tab-highlight"] { background-color: var(--teal) !important; }
-
-/* ---------- Callouts ---------- */
-.callout {
-    border-radius: 14px; padding: 16px 18px; line-height: 1.6; font-size: 0.97rem;
-}
-.callout-teal { background: var(--teal-light); border-left: 4px solid var(--teal); }
-.callout-amber { background: var(--amber-light); border-left: 4px solid var(--amber); }
-.callout-title { font-family: 'Sora', sans-serif; font-weight: 600; margin-bottom: 6px; }
-
-/* ---------- Keyword chips ---------- */
-.chip {
-    display: inline-block; background: var(--mist); border: 1px solid var(--line);
-    color: var(--ink); padding: 5px 12px; border-radius: 8px;
-    font-size: 0.85rem; margin: 0 8px 8px 0;
+.hero p {
+    color: #DBEAFE;
+    font-size: 15px;
+    margin-bottom: 0;
 }
 
-/* ---------- Progress ---------- */
-.stProgress > div > div > div > div { background-color: var(--teal); }
-
-/* ---------- Mobile ---------- */
-@media (max-width: 700px) {
-    .hero { padding: 28px 24px; }
-    .hero h1 { font-size: 1.7rem; }
+/* Section headings */
+.section-heading {
+    font-size: 21px;
+    font-weight: 750;
+    color: #172554;
+    margin-top: 10px;
+    margin-bottom: 15px;
 }
+
+/* Cards */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: white;
+    border-radius: 14px;
+    border-color: #E2E8F0;
+}
+
+/* Buttons */
+.stButton > button {
+    border-radius: 9px;
+    min-height: 43px;
+    font-weight: 650;
+    transition: all 0.2s ease;
+}
+
+.stButton > button:hover {
+    border-color: #2563EB;
+    color: #2563EB;
+}
+
+/* Primary buttons */
+.stButton > button[kind="primary"] {
+    background: #2563EB;
+    border: none;
+    color: white;
+}
+
+/* Inputs */
+.stTextArea textarea {
+    border-radius: 9px;
+    background-color: #FFFFFF;
+}
+
+.stSelectbox div[data-baseweb="select"] {
+    border-radius: 9px;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #FFFFFF;
+    border-right: 1px solid #E2E8F0;
+}
+
+/* Metrics */
+div[data-testid="stMetric"] {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    padding: 17px;
+    border-radius: 12px;
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    color: #64748B;
+    font-size: 12px;
+    padding-top: 30px;
+}
+
 </style>
-"""
-
-st.markdown(CSS, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 
-# --------------------------------------------------
-# HELPERS
-# --------------------------------------------------
-
-def greeting() -> str:
-    hour = datetime.now().hour
-    if hour < 12:
-        return "Good morning ☀️"
-    if hour < 17:
-        return "Good afternoon 👋"
-    return "Good evening 🌙"
-
-
-def esc(text) -> str:
-    return html.escape(str(text))
-
-
-def difficulty_badge(level: str) -> str:
-    css = {
-        "easy": "badge-easy",
-        "medium": "badge-medium",
-        "hard": "badge-hard",
-    }.get(str(level).strip().lower(), "badge-medium")
-    return f'<span class="badge {css}">{esc(level)}</span>'
-
-
-def build_download_text(result) -> str:
-    lines = [f"{result.job_role} | {result.experience_level}", "=" * 60, ""]
-    for i, q in enumerate(result.questions, start=1):
-        lines += [
-            f"Q{i}. {q.question}",
-            f"Type: {q.question_type} | Difficulty: {q.difficulty}",
-            "",
-            "Model answer:",
-            str(q.model_answer),
-            "",
-            "In simple words:",
-            str(q.explanation),
-            "",
-            "Practical example:",
-            str(q.practical_example),
-            "",
-            "Keywords: " + ", ".join(q.keywords),
-            "",
-            f"Follow-up: {q.follow_up}",
-            "",
-            "-" * 60,
-            "",
-        ]
-    return "\n".join(lines)
-
-
-# --------------------------------------------------
+# ============================================================
 # SIDEBAR
-# --------------------------------------------------
+# ============================================================
 
 with st.sidebar:
-    st.markdown(
-        """
-        <div class="side-brand">
-            <div class="side-logo">🎯</div>
-            <div class="side-title">Placement<br>Prep Coach</div>
-        </div>
-        <p class="side-sub">Tell us about the role you're aiming for. We'll build your practice set.</p>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    job_role = st.selectbox(
-        "Which role are you preparing for?",
+    st.markdown("# 🎯 PlacementAI")
+    st.caption("Your personal AI interview coach")
+
+    st.divider()
+
+    page = st.radio(
+        "NAVIGATION",
         [
-            "Python Developer",
-            "Java Developer",
-            "AI Engineer",
-            "Machine Learning Engineer",
-            "Data Analyst",
-            "Data Scientist",
-            "GenAI Engineer",
-            "Backend Developer",
+            "🏠 Interview Practice",
+            "📊 My Evaluation",
+            "ℹ️ About Project"
         ],
+        label_visibility="visible"
     )
 
-    experience_level = st.selectbox(
-        "Your experience level",
-        ["Fresher", "0-1 Years", "1-3 Years", "3-5 Years"],
+    st.divider()
+
+    st.markdown("### ⚙️ Application Settings")
+
+    st.caption("AI Model")
+    st.success("GPT-OSS via OpenRouter")
+
+    st.caption("Workflow Engine")
+    st.info("LangGraph")
+
+    st.caption("Monitoring")
+    st.info("LangSmith")
+
+    st.divider()
+
+    st.metric(
+        "Completed Evaluations",
+        st.session_state.total_attempts
     )
 
-    difficulty = st.selectbox(
-        "How tough should it be?",
-        ["Easy", "Medium", "Hard"],
-        index=1,
-    )
+    if st.button("🗑️ Reset Application", use_container_width=True):
 
-    num_questions = st.slider(
-        "How many questions?",
-        min_value=3,
-        max_value=15,
-        value=5,
-    )
+        for key in defaults:
+            if key == "total_attempts":
+                st.session_state[key] = 0
+            else:
+                st.session_state[key] = defaults[key]
 
-    st.write("")
-    generate = st.button(
-        "Build my practice set",
-        type="primary",
-        use_container_width=True,
-    )
+        st.rerun()
 
 
-# --------------------------------------------------
-# GENERATE
-# --------------------------------------------------
+# ============================================================
+# HEADER
+# ============================================================
 
-if generate:
-    with st.spinner("Putting your questions together. This takes a few seconds..."):
-        try:
-            st.session_state["result"] = generate_interview(
-                job_role,
-                experience_level,
-                difficulty,
-                num_questions,
-            )
-            st.session_state["run_id"] = st.session_state.get("run_id", 0) + 1
-        except Exception as e:
-            st.error(
-                f"We couldn't generate your questions: {e}. "
-                "Check your connection and API key, then try again."
-            )
+st.markdown("""
+<div class="hero">
+    <h1>AI Placement Feedback Assistant</h1>
+    <p>
+        Practice technical interviews, evaluate your answers,
+        discover improvement areas and become placement ready.
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 
-# --------------------------------------------------
-# HERO
-# --------------------------------------------------
+# ============================================================
+# INTERVIEW PRACTICE PAGE
+# ============================================================
 
-st.markdown(
-    f"""
-    <div class="hero">
-        <p class="hero-greeting">{greeting()}, ready to practise?</p>
-        <h1>Walk into your interview feeling prepared.</h1>
-        <p>Get realistic questions, clear model answers, simple explanations and
-        the follow-ups interviewers actually ask, all matched to your role.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+if page == "🏠 Interview Practice":
 
-
-# --------------------------------------------------
-# RESULTS
-# --------------------------------------------------
-
-if "result" in st.session_state:
-    result = st.session_state["result"]
-    run_id = st.session_state.get("run_id", 0)
-    total = len(result.questions)
-
-    # Header card
     st.markdown(
-        f"""
-        <div class="result-head">
-            <h2>{esc(result.job_role)}</h2>
-            <div class="meta">{esc(result.experience_level)} · {total} questions ready for you</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+        '<div class="section-heading">🚀 Start Your Interview Practice</div>',
+        unsafe_allow_html=True
     )
 
-    # Progress (counts questions marked as practised)
-    done = sum(
-        1 for i in range(1, total + 1)
-        if st.session_state.get(f"done_{run_id}_{i}", False)
+    st.write(
+        "Choose your target job role and practise answering "
+        "realistic interview questions."
     )
 
-    p1, p2 = st.columns([4, 1])
-    with p1:
-        st.progress(done / total if total else 0)
-        if done == 0:
-            st.caption("Open a question, practise it out loud, then tick it off.")
-        elif done < total:
-            st.caption(f"{done} of {total} practised. Nice momentum, keep going.")
-        else:
-            st.caption("All done. You've worked through the whole set. Well done! 🎉")
-    with p2:
-        st.download_button(
-            "Save as text",
-            data=build_download_text(result),
-            file_name="interview_practice.txt",
-            mime="text/plain",
-            use_container_width=True,
+    # --------------------------------------------------------
+    # JOB ROLE
+    # --------------------------------------------------------
+
+    with st.container(border=True):
+
+        st.markdown("### 1. Select Your Career Role")
+
+        job_role = st.selectbox(
+            "Target Job Role",
+            [
+                "Python Developer",
+                "Data Scientist",
+                "Machine Learning Engineer",
+                "Full Stack Developer",
+                "AI Engineer",
+                "Software Developer",
+                "Data Analyst",
+                "Cloud Engineer"
+            ],
+            key="job_role"
         )
 
-    st.write("")
+        st.caption(
+            "Your interview question and evaluation will be based on this role."
+        )
 
-    # Question cards
-    for index, q in enumerate(result.questions, start=1):
-        is_done = st.session_state.get(f"done_{run_id}_{index}", False)
-        prefix = "✅ " if is_done else ""
+    # --------------------------------------------------------
+    # QUESTION GENERATION
+    # --------------------------------------------------------
 
-        with st.expander(
-            f"{prefix}Q{index}. {q.question}",
-            expanded=(index == 1),
-        ):
-            st.markdown(
-                f'<span class="badge badge-type">{esc(q.question_type)}</span>'
-                f"{difficulty_badge(q.difficulty)}",
-                unsafe_allow_html=True,
+    with st.container(border=True):
+
+        st.markdown("### 2. Choose Your Interview Question")
+
+        question_mode = st.radio(
+            "Question source",
+            [
+                "✨ Generate with AI",
+                "✍️ Enter manually"
+            ],
+            horizontal=True
+        )
+
+        question = ""
+
+        if question_mode == "✨ Generate with AI":
+
+            st.info(
+                "Let AI generate a technical interview question "
+                "based on your selected job role."
             )
-            st.write("")
 
-            tab_answer, tab_simple, tab_example, tab_follow = st.tabs(
-                ["Model answer", "In simple words", "Practical example", "Follow-up"]
-            )
+            if st.button(
+                "✨ Generate Interview Question",
+                type="primary",
+                use_container_width=True
+            ):
 
-            with tab_answer:
-                st.markdown(q.model_answer)
-                st.write("")
-                st.markdown("**Words worth using in your answer**")
-                st.markdown(
-                    "".join(f'<span class="chip">{esc(k)}</span>' for k in q.keywords),
-                    unsafe_allow_html=True,
+                try:
+
+                    with st.spinner(
+                        "AI is preparing your interview question..."
+                    ):
+
+                        generated = generate_interview_question(job_role)
+
+                        st.session_state.generated_question_input = generated
+                        st.session_state.generated_for_role = job_role
+                        st.session_state.result = None
+
+                except Exception as e:
+
+                    st.error(f"Question generation failed: {e}")
+
+            if (
+                st.session_state.generated_for_role
+                and st.session_state.generated_for_role != job_role
+            ):
+                st.warning(
+                    "The selected role has changed. Generate a new question."
                 )
 
-            with tab_simple:
-                st.markdown(
-                    f"""
-                    <div class="callout callout-teal">
-                        <div class="callout-title">Think of it this way</div>
-                        {esc(q.explanation)}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            with tab_example:
-                st.markdown(q.practical_example)
-
-            with tab_follow:
-                st.markdown(
-                    f"""
-                    <div class="callout callout-amber">
-                        <div class="callout-title">Be ready for this next</div>
-                        {esc(q.follow_up)}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            st.write("")
-            st.checkbox(
-                "I've practised this one",
-                key=f"done_{run_id}_{index}",
+            question = st.text_area(
+                "Your Interview Question",
+                key="generated_question_input",
+                height=110,
+                placeholder="Generate a question to get started..."
             )
 
-# --------------------------------------------------
-# WELCOME (before first run)
-# --------------------------------------------------
+        else:
 
-else:
-    st.markdown("### How it works")
-    c1, c2, c3 = st.columns(3)
-
-    tiles = [
-        ("🧭", "Pick your target",
-         "Choose the role, your experience and how challenging you want the practice to be."),
-        ("🗣️", "Practise out loud",
-         "Read the question, answer in your own words, then compare with the model answer."),
-        ("🔁", "Handle the follow-up",
-         "Every question comes with the next thing an interviewer is likely to ask."),
-    ]
-
-    for col, (ico, title, body) in zip((c1, c2, c3), tiles):
-        with col:
-            st.markdown(
-                f"""
-                <div class="tile">
-                    <div class="ico">{ico}</div>
-                    <h4>{title}</h4>
-                    <p>{body}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            question = st.text_area(
+                "Enter Your Interview Question",
+                key="custom_question",
+                height=110,
+                placeholder="Example: Explain the difference between a list and a tuple in Python."
             )
 
-    st.write("")
-    st.info("Set your preferences on the left, then choose **Build my practice set**.")
+    # --------------------------------------------------------
+    # STUDENT ANSWER
+    # --------------------------------------------------------
+
+    with st.container(border=True):
+
+        st.markdown("### 3. Submit Your Interview Answer")
+
+        student_answer = st.text_area(
+            "Your Answer",
+            height=190,
+            placeholder=(
+                "Write your answer here...\n\n"
+                "Explain the concept clearly and include examples where possible."
+            ),
+            key="student_answer"
+        )
+
+        word_count = len(student_answer.split())
+
+        st.caption(f"📝 Word count: {word_count}")
+
+        evaluate_button = st.button(
+            "🚀 Evaluate My Answer",
+            type="primary",
+            use_container_width=True
+        )
+
+    # --------------------------------------------------------
+    # WORKFLOW EXECUTION
+    # --------------------------------------------------------
+
+    if evaluate_button:
+
+        if not question.strip():
+
+            st.warning("Please generate or enter an interview question.")
+
+        elif not student_answer.strip():
+
+            st.warning("Please enter your interview answer.")
+
+        else:
+
+            initial_state = {
+                "job_role": job_role,
+                "question": question,
+                "student_answer": student_answer,
+                "analysis": "",
+                "score": 0,
+                "feedback": "",
+                "final_report": ""
+            }
+
+            try:
+
+                with st.spinner(
+                    "🤖 LangGraph is evaluating your interview answer..."
+                ):
+
+                    result = workflow_app.invoke(initial_state)
+
+                    st.session_state.result = result
+                    st.session_state.total_attempts += 1
+
+            except Exception as e:
+
+                st.error(f"Workflow execution failed: {e}")
+
+    # --------------------------------------------------------
+    # DISPLAY RESULTS
+    # --------------------------------------------------------
+
+    if st.session_state.result is not None:
+
+        result = st.session_state.result
+        score = result["score"]
+
+        st.divider()
+
+        st.markdown(
+            '<div class="section-heading">📊 Your Performance Dashboard</div>',
+            unsafe_allow_html=True
+        )
+
+        # Metrics
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Interview Score",
+                f"{score}/10"
+            )
+
+        with col2:
+            st.metric(
+                "Performance",
+                "Good" if score >= 7 else "Needs Improvement"
+            )
+
+        with col3:
+            st.metric(
+                "Evaluation Status",
+                "Completed"
+            )
+
+        st.progress(score / 10)
+
+        if score >= 7:
+            st.success(
+                "Excellent work! Your answer meets the evaluation threshold."
+            )
+        else:
+            st.warning(
+                "Your answer needs improvement. Review the feedback below."
+            )
+
+        # Results tabs
+        analysis_tab, feedback_tab, report_tab = st.tabs(
+            [
+                "🔍 Answer Analysis",
+                "💡 Improvement Feedback",
+                "📄 Final Report"
+            ]
+        )
+
+        with analysis_tab:
+
+            st.markdown("### Answer Analysis")
+
+            st.write(result["analysis"])
+
+            with st.expander("View Submitted Answer"):
+
+                st.write(result["student_answer"])
+
+        with feedback_tab:
+
+            st.markdown("### Personalized Improvement Feedback")
+
+            if result.get("feedback"):
+
+                st.markdown(result["feedback"])
+
+            else:
+
+                st.success(
+                    "No additional feedback required. "
+                    "Your answer achieved the required score."
+                )
+
+        with report_tab:
+
+            st.markdown("### Interview Evaluation Report")
+
+            st.markdown(result["final_report"])
+
+            st.download_button(
+                label="⬇️ Download Evaluation Report",
+                data=result["final_report"],
+                file_name="placement_feedback_report.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+
+        st.caption(
+            "AI-generated feedback is intended for interview practice "
+            "and does not represent an official hiring decision."
+        )
+
+
+# ============================================================
+# EVALUATION HISTORY PAGE
+# ============================================================
+
+elif page == "📊 My Evaluation":
+
+    st.markdown("## 📊 My Evaluation")
+
+    if st.session_state.result is None:
+
+        st.info(
+            "No evaluation available yet. Complete an interview practice "
+            "session to see your results here."
+        )
+
+    else:
+
+        result = st.session_state.result
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            st.metric(
+                "Latest Score",
+                f"{result['score']}/10"
+            )
+
+        with col2:
+
+            st.metric(
+                "Total Evaluations",
+                st.session_state.total_attempts
+            )
+
+        st.markdown("### Latest Interview Details")
+
+        st.write("**Job Role:**", result["job_role"])
+
+        st.write("**Question:**", result["question"])
+
+        st.write("**Score:**", f"{result['score']}/10")
+
+        st.markdown("### Latest Feedback")
+
+        if result.get("feedback"):
+            st.write(result["feedback"])
+        else:
+            st.success("No additional improvement feedback required.")
+
+        st.download_button(
+            "⬇️ Download Latest Report",
+            data=result["final_report"],
+            file_name="placement_feedback_report.txt",
+            mime="text/plain"
+        )
+
+
+# ============================================================
+# ABOUT PAGE
+# ============================================================
+
+elif page == "ℹ️ About Project":
+
+    st.markdown("## ℹ️ About PlacementAI")
+
+    st.write(
+        "PlacementAI is an AI-powered interview practice application "
+        "that evaluates student answers and generates personalized feedback."
+    )
+
+    st.markdown("### Technology Stack")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.markdown("""
+        - **Python:** Programming language
+        - **LangChain:** LLM integration
+        - **LangGraph:** Workflow orchestration
+        - **OpenRouter:** AI model access
+        """)
+
+    with col2:
+
+        st.markdown("""
+        - **Streamlit:** User interface
+        - **LangSmith:** Workflow tracing
+        - **GPT-OSS:** Language model
+        """)
+
+    st.markdown("### Workflow Architecture")
+
+    st.code("""
+START
+  |
+  v
+Analyze Answer
+  |
+  v
+Evaluate Answer
+  |
+  v
+Conditional Routing
+  |
+  +---- Score < 7 ----> Generate Feedback
+  |                            |
+  +---- Score >= 7 ------------+
+                               |
+                               v
+                       Generate Report
+                               |
+                               v
+                              END
+    """, language="text")
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.markdown("""
+<div class="footer">
+    PlacementAI | Built with LangChain, LangGraph, Streamlit and LangSmith
+    <br>
+    AI-powered interview preparation for students
+</div>
+""", unsafe_allow_html=True)
